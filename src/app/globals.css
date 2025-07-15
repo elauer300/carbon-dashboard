@@ -123,3 +123,11 @@
     @apply bg-background text-foreground;
   }
 }
+/* --- dashboard helpers ---------------------------------------- */
+.btn-green {
+  @apply bg-green-600 hover:bg-green-700 text-white transition;
+}
+
+.chart-heading {
+  @apply text-lg font-semibold mt-10 mb-4 text-green-900;
+}

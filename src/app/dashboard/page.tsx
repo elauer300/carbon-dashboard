@@ -1,40 +1,184 @@
-import { AppSidebar } from "@/components/app-sidebar"
-import { ChartAreaInteractive } from "@/components/chart-area-interactive"
-import { DataTable } from "@/components/data-table"
-import { SectionCards } from "@/components/section-cards"
-import { SiteHeader } from "@/components/site-header"
+'use client'
+
+import { useState, useEffect } from 'react'
+import Papa from 'papaparse'
 import {
-  SidebarInset,
-  SidebarProvider,
-} from "@/components/ui/sidebar"
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Tooltip,
+  Legend,
+  Filler
+} from 'chart.js'
+import { Line } from 'react-chartjs-2'
+import Header from '@/components/Header'   // <- keeps the logo/header
 
-import data from "./data.json"
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Tooltip,
+  Legend,
+  Filler
+)
 
-export default function Page() {
-  return (
-    <SidebarProvider
-      style={
-        {
-          "--sidebar-width": "calc(var(--spacing) * 72)",
-          "--header-height": "calc(var(--spacing) * 12)",
-        } as React.CSSProperties
+const CO2_PER_MILE_T = 1.87e-6 // t CO₂ saved per mile-per-pallet
+
+type Row = { date: Date; pallets: number; miles: number }
+
+export default function DashboardPage() {
+  /* ─────── state ─────── */
+  const [records, setRecords] = useState<Row[]>([])
+  const [totPallets, setTotPallets] = useState(0)
+  const [totMiles, setTotMiles]   = useState(0)
+  const [totCO2,   setTotCO2]     = useState(0)
+  const [co2Data,  setCo2Data]    = useState<any>(null)
+  const [mileData, setMileData]   = useState<any>(null)
+
+  /* ─────── csv upload ─────── */
+  function handleCSV(file: File) {
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: ({ data }) => {
+        const parsed: Row[] = (data as any[])
+          .map((r) => {
+            const raw = r.date || r.Date || r.month || r.Month
+            if (!raw) return null
+            const [m, d, y] = (raw as string).split('/')
+            return {
+              date: new Date(+y, +m - 1, +d),
+              pallets: +((r.pallets || r.Pallets || '0').replace(/,/g, '')),
+              miles: +((r.miles || r.Miles || '0').replace(/,/g, ''))
+            }
+          })
+          .filter(Boolean) as Row[]
+        parsed.sort((a, b) => a.date.getTime() - b.date.getTime())
+        setRecords(parsed)
       }
-    >
-      <AppSidebar variant="inset" />
-      <SidebarInset>
-        <SiteHeader />
-        <div className="flex flex-1 flex-col">
-          <div className="@container/main flex flex-1 flex-col gap-2">
-            <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-              <SectionCards />
-              <div className="px-4 lg:px-6">
-                <ChartAreaInteractive />
-              </div>
-              <DataTable data={data} />
-            </div>
-          </div>
+    })
+  }
+
+  /* ─────── crunch totals & chart datasets whenever records change ─────── */
+  useEffect(() => {
+    if (!records.length) return
+
+    // Build full timeline (day-by-day) so cumulative lines are continuous
+    const first = records[0].date
+    const last  = records[records.length - 1].date
+    const dayMS = 24 * 60 * 60 * 1000
+    const timeline: Date[] = []
+    for (let t = first.getTime(); t <= last.getTime(); t += dayMS) {
+      timeline.push(new Date(t))
+    }
+    const map = new Map(records.map(r => [r.date.toDateString(), r]))
+
+    const labels: string[] = []
+    const cumMiles: number[] = []
+    const cumCO2: number[]   = []
+
+    let mAcc = 0
+    let co2Acc = 0
+
+    timeline.forEach(d => {
+      const r = map.get(d.toDateString())
+      const miles = r?.miles || 0
+      const pallets = r?.pallets || 0
+
+      mAcc  += miles
+      co2Acc += pallets * miles * CO2_PER_MILE_T
+
+      labels.push(`${d.getMonth()+1}/${d.getDate()}/${d.getFullYear()}`)
+      cumMiles.push(+mAcc.toFixed(1))
+      cumCO2.push(+co2Acc.toFixed(2))
+    })
+
+    /* KPIs */
+    setTotPallets(records.reduce((s,r) => s + r.pallets, 0))
+    setTotMiles(mAcc)
+    setTotCO2(co2Acc)
+
+    /* Slice last 3 months */
+    const threeAgo = new Date(last)
+    threeAgo.setMonth(threeAgo.getMonth() - 3)
+    const startIdx = labels.findIndex((_, i) => timeline[i] >= threeAgo)
+    const s = startIdx < 0 ? 0 : startIdx
+
+    setCo2Data({
+      labels: labels.slice(s),
+      datasets: [{
+        label: 'Cumulative CO₂ Removed (t)',
+        data: cumCO2.slice(s),
+        fill: true,
+        backgroundColor: 'rgba(34,197,94,0.25)',
+        borderColor: 'rgba(34,197,94,1)',
+        tension: 0.25,
+        pointRadius: 0
+      }]
+    })
+
+    setMileData({
+      labels: labels.slice(s),
+      datasets: [{
+        label: 'Cumulative Miles',
+        data: cumMiles.slice(s),
+        fill: true,
+        backgroundColor: 'rgba(59,130,246,0.25)',
+        borderColor: 'rgba(59,130,246,1)',
+        tension: 0.25,
+        pointRadius: 0
+      }]
+    })
+  }, [records])
+
+  /* Chart options */
+  const areaOpts = { responsive: true, scales: { y: { beginAtZero: true } }, plugins: { legend: { position: 'top' as const } } }
+
+  /* ─────── render ─────── */
+  return (
+    <>
+      <Header /> {/* keeps logo + nav if you have it */}      
+
+      <main className="mx-auto max-w-4xl p-6 space-y-6">
+        {/* KPI CARDS */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <KPICard label="Total Pallets" value={totPallets.toLocaleString()} color="text-green-600" />
+          <KPICard label="Total Miles"   value={totMiles.toLocaleString()}   color="text-blue-600"  />
+          <KPICard label="Total CO₂ Removed (t)" value={totCO2.toFixed(1)}  color="text-green-700" />
         </div>
-      </SidebarInset>
-    </SidebarProvider>
+
+        {/* CSV upload */}
+        <input type="file" accept=".csv" onChange={e=>e.target.files?.[0] && handleCSV(e.target.files[0])} />
+
+        {/* CHART 1 – CO2 */}
+        {co2Data && (
+          <section className="h-48">
+            <h2 className="text-xl font-semibold mb-1">Cumulative CO₂ Removed (Last 3 Months)</h2>
+            <Line data={co2Data} options={areaOpts} />
+          </section>
+        )}
+
+        {/* CHART 2 – Miles */}
+        {mileData && (
+          <section className="h-48">
+            <h2 className="text-xl font-semibold mb-1">Cumulative Miles Traveled (Last 3 Months)</h2>
+            <Line data={mileData} options={areaOpts} />
+          </section>
+        )}
+      </main>
+    </>
+  )
+}
+
+/* KPI helper */
+function KPICard({ label, value, color }:{ label:string; value:string; color:string }) {
+  return (
+    <div className="border border-gray-300 p-4 rounded-lg shadow-sm">
+      <div className="text-sm text-gray-600">{label}</div>
+      <div className={`mt-1 text-2xl font-bold ${color}`}>{value}</div>
+    </div>
   )
 }
