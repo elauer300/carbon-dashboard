@@ -1,186 +1,178 @@
-'use client'
+// src/app/page.tsx
+"use client";
 
-import { useState, useEffect } from 'react'
-import Papa from 'papaparse'
+import { useState } from "react";
+import Papa from "papaparse";
 import {
   Chart as ChartJS,
   CategoryScale,
   LinearScale,
   PointElement,
   LineElement,
+  Title,
   Tooltip,
   Legend,
   Filler,
-} from 'chart.js'
-import { Line } from 'react-chartjs-2'
+} from "chart.js";
+import { Line, Bar } from "react-chartjs-2";
 
+// register ChartJS modules
 ChartJS.register(
   CategoryScale,
   LinearScale,
   PointElement,
   LineElement,
+  Title,
   Tooltip,
   Legend,
   Filler
-)
+);
 
-const CO2_PER_MILE_T = 1.87e-6 // tonnes CO₂ removed per mile per pallet
+export default function DashboardPage() {
+  // State hooks for CSV data, chart data, KPIs, etc.
+  const [totalPallets, setTotalPallets] = useState(0);
+  const [totalMiles, setTotalMiles] = useState(0);
+  const [totalCO2, setTotalCO2] = useState(0);
+  const [chartDataCO2, setChartDataCO2] = useState<any>(null);
+  const [chartDataMiles, setChartDataMiles] = useState<any>(null);
 
-export default function Page() {
-  const [records, setRecords] = useState<{ date: Date; pallets: number; miles: number }[]>([])
-  const [totalPallets, setTotalPallets] = useState(0)
-  const [totalMiles, setTotalMiles] = useState(0)
-  const [totalCO2, setTotalCO2] = useState(0)
-  const [dataCO2, setDataCO2] = useState<any>(null)
-  const [dataMiles, setDataMiles] = useState<any>(null)
-
+  // Handler for CSV upload
   function handleFile(file: File) {
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
-      complete: ({ data }) => {
-        const cleaned = (data as any[])
-          .map((r) => {
-            const dateStr = r.date || r.Date || r.month || r.Month
-            const [m, d, y] = (dateStr as string).split('/')
-            return {
-              date: new Date(+y, +m - 1, +d),
-              pallets: +((r.pallets || r.Pallets || '0') as string).replace(/,/g, '') || 0,
-              miles: +((r.miles || r.Miles || '0') as string).replace(/,/g, '') || 0,
-            }
-          })
-          .filter((r) => !isNaN(r.date.getTime()))
-          .sort((a, b) => a.date.getTime() - b.date.getTime())
+      complete: (results) => {
+        const rows = results.data as Array<{
+          date: string;
+          pallets: string;
+          miles: string;
+          co2_saved: string;
+        }>;
 
-        setRecords(cleaned)
+        // Aggregate totals
+        let palletsSum = 0,
+          milesSum = 0,
+          co2Sum = 0;
+        const labels: string[] = [];
+        const co2Cumulative: number[] = [];
+        const milesCumulative: number[] = [];
+        rows.forEach((r) => {
+          palletsSum += Number(r.pallets || 0);
+          milesSum += Number(r.miles || 0);
+          co2Sum += Number(r.co2_saved || 0);
+          labels.push(r.date);
+          co2Cumulative.push(co2Sum);
+          milesCumulative.push(milesSum);
+        });
+
+        setTotalPallets(palletsSum);
+        setTotalMiles(milesSum);
+        setTotalCO2(co2Sum);
+
+        setChartDataCO2({
+          labels,
+          datasets: [
+            {
+              label: "Cumulative CO₂ Removed (t)",
+              data: co2Cumulative,
+              borderColor: "#26a69a",
+              backgroundColor: "rgba(38,166,154,0.2)",
+              fill: true,
+              tension: 0.4,
+            },
+          ],
+        });
+
+        setChartDataMiles({
+          labels,
+          datasets: [
+            {
+              label: "Cumulative Miles Traveled",
+              data: milesCumulative,
+              borderColor: "#004d40",
+              backgroundColor: "rgba(0,77,64,0.2)",
+              fill: true,
+              tension: 0.4,
+            },
+          ],
+        });
       },
-    })
+    });
   }
 
-  useEffect(() => {
-    if (records.length === 0) return
-
-    // Build day-by-day timeline
-    const first = records[0].date
-    const last = records[records.length - 1].date
-    const dayMS = 24 * 60 * 60 * 1000
-    const timeline: Date[] = []
-    for (let t = first.getTime(); t <= last.getTime(); t += dayMS) {
-      timeline.push(new Date(t))
-    }
-
-    const map = new Map(records.map((r) => [r.date.toDateString(), r]))
-
-    const labels: string[] = []
-    const dailyMiles: number[] = []
-    const cumMiles: number[] = []
-    const cumCO2: number[] = []
-    let mSum = 0,
-      co2Sum = 0
-
-    timeline.forEach((d) => {
-      const rec = map.get(d.toDateString())
-      const miles = rec?.miles || 0
-      const pallets = rec?.pallets || 0
-      mSum += miles
-      co2Sum += pallets * miles * CO2_PER_MILE_T
-
-      labels.push(`${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`)
-      dailyMiles.push(miles)
-      cumMiles.push(parseFloat(mSum.toFixed(1)))
-      cumCO2.push(parseFloat(co2Sum.toFixed(2)))
-    })
-
-    // Compute KPIs
-    setTotalPallets(records.reduce((sum, r) => sum + r.pallets, 0))
-    setTotalMiles(dailyMiles.reduce((sum, v) => sum + v, 0))
-    setTotalCO2(cumCO2[cumCO2.length - 1] || 0)
-
-    // Slice last 3 months
-    const threeAgo = new Date(last)
-    threeAgo.setMonth(threeAgo.getMonth() - 3)
-    const startIdx = labels.findIndex((_, i) => timeline[i] >= threeAgo)
-    const s = startIdx < 0 ? 0 : startIdx
-
-    const lbl3 = labels.slice(s)
-    const cm3 = cumCO2.slice(s)
-    const mm3 = cumMiles.slice(s)
-
-    setDataCO2({
-      labels: lbl3,
-      datasets: [
-        {
-          label: 'Cumulative CO₂ Removed (t)',
-          data: cm3,
-          fill: true,
-          backgroundColor: 'rgba(34,197,94,0.2)',
-          borderColor: 'rgba(34,197,94,1)',
-          tension: 0.2,
-          pointRadius: 0,
-        },
-      ],
-    })
-
-    setDataMiles({
-      labels: lbl3,
-      datasets: [
-        {
-          label: 'Cumulative Miles',
-          data: mm3,
-          fill: true,
-          backgroundColor: 'rgba(59,130,246,0.2)',
-          borderColor: 'rgba(59,130,246,1)',
-          tension: 0.2,
-          pointRadius: 0,
-        },
-      ],
-    })
-  }, [records])
-
+  // Common chart options
   const areaOptions = {
     responsive: true,
-    scales: { y: { beginAtZero: true } },
-    plugins: { legend: { position: 'top' as const } },
-  }
+    plugins: {
+      legend: { position: "top" as const },
+    },
+    scales: {
+      x: { grid: { display: false } },
+      y: { beginAtZero: true },
+    },
+  };
 
   return (
-    <main className="mx-auto max-w-4xl p-6 space-y-6">
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="border border-gray-300 p-4 rounded-lg shadow-sm">
-          <div className="text-sm text-gray-600">Total Pallets</div>
-          <div className="mt-1 text-2xl font-bold text-green-600">{totalPallets.toLocaleString()}</div>
-        </div>
-        <div className="border border-gray-300 p-4 rounded-lg shadow-sm">
-          <div className="text-sm text-gray-600">Total Miles</div>
-          <div className="mt-1 text-2xl font-bold text-blue-600">{totalMiles.toLocaleString()}</div>
-        </div>
-        <div className="border border-gray-300 p-4 rounded-lg shadow-sm">
-          <div className="text-sm text-gray-600">Total CO₂ Removed (t)</div>
-          <div className="mt-1 text-2xl font-bold text-green-700">{totalCO2.toFixed(1)}</div>
-        </div>
+    <section>
+      {/* --- KPI stat cards --- */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+        <StatBox label="Total Pallets" value={totalPallets.toLocaleString()} />
+        <StatBox
+          label="Total Miles"
+          value={totalMiles.toLocaleString()}
+        />
+        <StatBox
+          label="Total CO₂ Removed (t)"
+          value={totalCO2.toFixed(1)}
+        />
       </div>
 
-      {/* CSV Upload */}
-      <div>
-        <input type="file" accept=".csv" onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])} />
+      {/* --- CSV uploader --- */}
+      <div className="mb-8">
+        <input
+          type="file"
+          accept=".csv"
+          onChange={(e) =>
+            e.target.files?.[0] && handleFile(e.target.files[0])
+          }
+        />
       </div>
 
-      {/* CO₂ Chart (Top) */}
-      {dataCO2 && (
-        <section className="h-64">
-          <h2 className="text-xl font-semibold mb-2">Cumulative CO₂ Removed (Last 3 Months)</h2>
-          <Line data={dataCO2} options={areaOptions} />
-        </section>
+      {/* --- CO2 Area Chart --- */}
+      {chartDataCO2 && (
+        <div className="mb-12">
+          <h2 className="chart-heading">
+            Cumulative CO₂ Removed (Last 3 Months)
+          </h2>
+          <Line data={chartDataCO2} options={areaOptions} height={200} />
+        </div>
       )}
 
-      {/* Miles Chart (Bottom) */}
-      {dataMiles && (
-        <section className="h-64">
-          <h2 className="text-xl font-semibold mb-2">Cumulative Miles Traveled (Last 3 Months)</h2>
-          <Line data={dataMiles} options={areaOptions} />
-        </section>
+      {/* --- Miles Area Chart --- */}
+      {chartDataMiles && (
+        <div className="mb-12">
+          <h2 className="chart-heading">
+            Cumulative Miles Traveled (Last 3 Months)
+          </h2>
+          <Line data={chartDataMiles} options={areaOptions} height={200} />
+        </div>
       )}
-    </main>
-  )
+    </section>
+  );
+}
+
+// Simple stat card component
+function StatBox({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="border border-gray-300 p-4 rounded-lg shadow-sm bg-white">
+      <div className="text-sm text-gray-600">{label}</div>
+      <div className="mt-1 text-2xl font-bold text-green-700">{value}</div>
+    </div>
+  );
 }
