@@ -1,26 +1,24 @@
-// src/app/layout.tsx
-import "./globals.css";
-import type { ReactNode } from "react";
+import './globals.css'
+import { metadata } from './head'
 
-export const metadata = {
-  title: "PALIoT Solutions – Voluntary Carbon Credit Analysis",
-  description: "Track pallets, miles, fuel & CO₂ removal in real time",
-};
-
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
   return (
     <html lang="en">
       <head>
-        {/* Google Font */}
-        <link
-          href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600&display=swap"
-          rel="stylesheet"
-        />
+        <meta charSet="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>{metadata.title}</title>
+        <meta name="description" content={metadata.description} />
+        <link rel="icon" href="/paliot-logo.png" />
       </head>
       <body>
-        {/* --- Topbar / Header --- */}
+        {/* Top bar with logo */}
         <header className="topbar">
-          <div className="container">
+          <div className="container flex items-center justify-between">
             <img
               src="/paliot-logo.png"
               alt="PALIoT Solutions Logo"
@@ -29,20 +27,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           </div>
         </header>
 
-        {/* --- Hero --- */}
-        <section className="hero">
-          <div className="container">
-            <h1>Voluntary Carbon Credit Analysis</h1>
-            <p className="tagline">
-              Turning pallets into data through technology
-            </p>
-          </div>
-        </section>
+        {/* Dashboard content */}
+        <main>{children}</main>
 
-        {/* --- Page content --- */}
-        <main className="container">{children}</main>
-
-        {/* --- Footer --- */}
+        {/* Global footer */}
         <footer className="footer">
           <div className="container">
             © 2025 PALIoT Solutions. All rights reserved.
@@ -50,5 +38,5 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         </footer>
       </body>
     </html>
-  );
+  )
 }
