@@ -1,5 +1,15 @@
 // src/app/head.tsx
-export const metadata = {
-  title: 'PALIoT Solutions – Voluntary Carbon Credit Analysis',
-  description: 'Track your pallets, miles, fuel & CO₂ removal in real time via our dashboard.',
-};
+
+export default function Head() {
+  return (
+    <>
+      <title>PALIoT Solutions – Voluntary Carbon Credit Dashboard</title>
+      <meta name="viewport" content="width=device-width, initial-scale=1" />
+      <link rel="icon" href="/paliot-logo.png" />
+      <link
+        href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600&display=swap"
+        rel="stylesheet"
+      />
+    </>
+  )
+}
